@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamLog — Watch Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #07080f;
+  --felt:     #0b0d1a;
+  --surface:  #0f1120;
+  --tape:     #151828;
+  --border:   #1e2340;
+  --amber:    #a259ff;
+  --amber2:   #c98fff;
+  --cream:    #e0deff;
+  --muted:    #4a4870;
+  --watching: #00e5ff;
+  --finished: #39ff8e;
+  --wishlist: #a259ff;
+  --dropped:  #ff3c6e;
+  --scanline: rgba(0,0,255,0.06);
+}
+
+/* ── base ── */
+body {
+  background: var(--bg);
+  color: var(--cream);
+  font-family: 'Courier Prime', monospace;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* CRT scanlines */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px, transparent 3px,
+    var(--scanline) 3px, var(--scanline) 4px
+  );
+  pointer-events: none; z-index: 9998; opacity: .35;
+}
+
+/* Vignette */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(7,8,20,0.85) 100%);
+  pointer-events: none; z-index: 9997;
+}
+
+/* ── shelf header ── */
+.shelf-header {
+  background: var(--felt);
+  border-bottom: 4px solid var(--border);
+  padding: 0 28px;
+  position: relative;
+  overflow: hidden;
+}
+
+.shelf-header::after {
+  content: '';
+  position: absolute; bottom: 0; left: 0; right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--watching), var(--amber), var(--finished));
+}
+
+.header-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 0 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.logo-block {}
+
+.logo {
+  font-family: 'Alfa Slab One', serif;
+  font-size: 3rem;
+  color: var(--amber);
+  letter-spacing: 1px;
+  line-height: 1;
+  text-shadow: 0 0 24px rgba(162,89,255,0.6), 3px 3px 0 rgba(0,0,0,0.5);
+}
+
+.logo-tape {
+  display: inline-block;
+  background: var(--amber);
+  color: var(--bg);
+  font-size: 0.6rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  margin-top: 5px;
+  font-family: 'Courier Prime', monospace;
+  font-weight: 700;
+}
+
+/* Counter badges */
+.counters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.counter {
+  text-align: center;
+  min-width: 60px;
+}
+
+.counter-num {
+  font-family: 'Alfa Slab One', serif;
+  font-size: 2rem;
+  line-height: 1;
+  display: block;
+}
+
+.counter-label {
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 2px;
+  display: block;
+}
+
+.counter[data-s="watching"]  .counter-num { color: var(--watching); }
+.counter[data-s="finished"]  .counter-num { color: var(--finished); }
+.counter[data-s="wishlist"]  .counter-num { color: var(--wishlist); }
+.counter[data-s="dropped"]   .counter-num { color: var(--dropped);  }
+
+/* ── main ── */
+.main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 24px 0;
+}
+
+/* ── add form ── */
+.add-tape {
+  background: var(--tape);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 18px 20px;
+  margin-bottom: 24px;
+  position: relative;
+}
+
+/* VHS spine sticker */
+.add-tape::before {
+  content: 'LOG TITLE';
+  position: absolute;
+  top: -10px; left: 16px;
+  background: var(--amber);
+  color: var(--bg);
+  font-size: 0.58rem;
+  letter-spacing: 0.2em;
+  font-weight: 700;
+  padding: 2px 8px;
+}
+
+.form-flex {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.fg { display: flex; flex-direction: column; gap: 5px; }
+.fg label { font-size: 0.62rem; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); }
+
+input[type="text"], select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 9px 12px;
+  color: var(--cream);
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.88rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+input:focus, select:focus { border-color: var(--amber); }
+input::placeholder { color: var(--muted); }
+select { cursor: pointer; appearance: none; padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 5 5-5' stroke='%237a6540' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
+
+.fg-title input { width: 260px; }
+.fg-platform select { min-width: 130px; }
+.fg-type     select { min-width: 110px; }
+.fg-status   select { min-width: 140px; }
+
+.rent-btn {
+  background: var(--amber);
+  border: none;
+  border-radius: 3px;
+  padding: 9px 22px;
+  color: var(--bg);
+  font-family: 'Alfa Slab One', serif;
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.14s;
+  white-space: nowrap;
+  align-self: flex-end;
+}
+.rent-btn:hover { background: var(--amber2); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(162,89,255,0.5); }
+
+/* ── search + filters ── */
+.controls-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.search-box {
+  flex: 1;
+  min-width: 180px;
+  background: var(--tape);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 8px 12px 8px 32px;
+  color: var(--cream);
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.85rem;
+  outline: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%237a6540' stroke-width='2' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='M21 21l-4.35-4.35'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 10px center;
+}
+.search-box:focus { border-color: var(--amber); }
+.search-box::placeholder { color: var(--muted); }
+
+.filter-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.ftab {
+  padding: 7px 14px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.13s;
+}
+.ftab:hover { border-color: var(--cream); color: var(--cream); }
+.ftab.active[data-f="all"]       { background: var(--cream);     border-color: var(--cream);     color: var(--bg); }
+.ftab.active[data-f="watching"]  { background: var(--watching);  border-color: var(--watching);  color: white; }
+.ftab.active[data-f="finished"]  { background: var(--finished);  border-color: var(--finished);  color: white; }
+.ftab.active[data-f="wishlist"]  { background: var(--wishlist);  border-color: var(--wishlist);  color: white; }
+.ftab.active[data-f="dropped"]   { background: var(--dropped);   border-color: var(--dropped);   color: white; }
+
+/* ── VHS card grid ── */
+.vhs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 18px;
+  padding-bottom: 60px;
+}
+
+/* VHS cassette card */
+.vhs-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+  cursor: default;
+  transition: transform 0.2s, box-shadow 0.2s;
+  animation: tapeIn 0.28s cubic-bezier(0.34,1.4,0.64,1);
+}
+
+@keyframes tapeIn {
+  from { opacity:0; transform: translateY(16px) scale(0.94); }
+  to   { opacity:1; transform: translateY(0) scale(1); }
+}
+
+.vhs-card:hover {
+  transform: translateY(-4px) rotate(-0.5deg);
+  box-shadow: 4px 8px 32px rgba(0,0,0,0.7);
+}
+
+/* Spine label (left side) */
+.vhs-spine {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 0.52rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--bg);
+}
+
+.vhs-card[data-status="watching"]  .vhs-spine { background: var(--watching); }
+.vhs-card[data-status="finished"]  .vhs-spine { background: var(--finished); }
+.vhs-card[data-status="wishlist"]  .vhs-spine { background: var(--wishlist); }
+.vhs-card[data-status="dropped"]   .vhs-spine { background: var(--dropped);  }
+
+.vhs-body {
+  padding: 14px 14px 14px 22px;
+}
+
+/* Tape window cutout */
+.tape-window {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 3px;
+  height: 32px;
+  margin-bottom: 10px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.tape-reel {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 2px solid #444;
+  position: relative;
+}
+
+.tape-reel::before {
+  content: '';
+  position: absolute; inset: 3px;
+  border-radius: 50%;
+  background: #222;
+}
+
+.tape-reel.spinning {
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.tape-line {
+  flex: 1; height: 2px;
+  background: #333;
+  border-radius: 1px;
+}
+
+.card-title {
+  font-family: 'Alfa Slab One', serif;
+  font-size: 0.92rem;
+  line-height: 1.3;
+  color: var(--cream);
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+
+.card-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.meta-tag {
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 2px;
+  font-weight: 700;
+  background: var(--tape);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.meta-tag.platform { color: var(--amber2); border-color: rgba(255,204,85,0.3); }
+
+/* Stars */
+.stars {
+  display: flex; gap: 2px; margin-bottom: 8px;
+}
+.star {
+  font-size: 0.85rem; cursor: pointer;
+  color: var(--border);
+  transition: color 0.1s, transform 0.1s;
+  line-height: 1;
+}
+.star:hover { transform: scale(1.2); }
+.star.lit { color: var(--amber); }
+.stars:hover .star { color: var(--amber); }
+.stars .star:hover ~ .star { color: var(--border); }
+
+/* Note area */
+.card-note {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-style: italic;
+  line-height: 1.5;
+  margin-bottom: 6px;
+  min-height: 16px;
+  cursor: text;
+}
+
+.note-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 5px 8px;
+  color: var(--cream);
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.72rem;
+  font-style: italic;
+  outline: none;
+  display: none;
+  margin-bottom: 6px;
+}
+.note-input.open { display: block; }
+.note-input:focus { border-color: var(--amber); }
+
+/* Status select */
+.status-sel {
+  width: 100%;
+  background: var(--tape);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 6px 8px;
+  color: var(--cream);
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  margin-bottom: 6px;
+}
+.status-sel:focus { border-color: var(--amber); }
+
+/* Card footer */
+.card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.card-date { font-size: 0.6rem; color: var(--muted); }
+
+.card-actions { display: flex; gap: 4px; }
+
+.icon-btn {
+  background: var(--tape);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  width: 26px; height: 26px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.75rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.12s;
+}
+.icon-btn:hover { border-color: var(--amber); color: var(--amber); }
+.icon-btn.del:hover { border-color: var(--dropped); color: var(--dropped); }
+
+/* Episode tracker (for series) */
+.ep-tracker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.ep-input {
+  width: 38px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 3px 6px;
+  color: var(--cream);
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.68rem;
+  text-align: center;
+  outline: none;
+}
+.ep-input:focus { border-color: var(--amber); }
+
+/* Empty state */
+.empty-state {
+  grid-column: 1/-1;
+  text-align: center;
+  padding: 80px 20px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+}
+.empty-icon { font-size: 3.5rem; opacity: 0.3; margin-bottom: 14px; }
+.empty-title { font-family: 'Alfa Slab One', serif; font-size: 1.4rem; color: var(--muted); }
+.empty-sub { font-size: 0.78rem; color: var(--muted); margin-top: 8px; opacity: 0.7; font-style: italic; }
+
+/* Sort bar */
+.sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sort-sel {
+  background: var(--tape);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 4px 22px 4px 8px;
+  color: var(--cream);
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 4 4-4' stroke='%237a6540' stroke-width='1.2' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 7px center;
+}
+
+.result-count { margin-left: auto; }
+</style>
+</head>
+<body>
+
+<!-- Header shelf -->
+<div class="shelf-header">
+  <div class="header-inner">
+    <div class="logo-block">
+      <div class="logo">StreamLog</div>
+      <div class="logo-tape">📼 Your personal watch log</div>
+    </div>
+    <div class="counters">
+      <div class="counter" data-s="watching">
+        <span class="counter-num" id="c-watching">0</span>
+        <span class="counter-label">Watching</span>
+      </div>
+      <div class="counter" data-s="finished">
+        <span class="counter-num" id="c-finished">0</span>
+        <span class="counter-label">Finished</span>
+      </div>
+      <div class="counter" data-s="wishlist">
+        <span class="counter-num" id="c-wishlist">0</span>
+        <span class="counter-label">Want to Watch</span>
+      </div>
+      <div class="counter" data-s="dropped">
+        <span class="counter-num" id="c-dropped">0</span>
+        <span class="counter-label">Dropped</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- Add form -->
+  <div class="add-tape">
+    <div class="form-flex">
+      <div class="fg fg-title">
+        <label>Title</label>
+        <input type="text" id="titleIn" placeholder="Enter title…">
+      </div>
+      <div class="fg fg-type">
+        <label>Type</label>
+        <select id="typeIn">
+          <option value="Series">📺 Series</option>
+          <option value="Movie">🎬 Movie</option>
+          <option value="Anime">⛩️ Anime</option>
+          <option value="Mini-Series">🎞️ Mini-Series</option>
+          <option value="Documentary">🎙️ Documentary</option>
+          <option value="Stand-Up">🎤 Stand-Up</option>
+        </select>
+      </div>
+      <div class="fg fg-platform">
+        <label>Platform</label>
+        <select id="platIn">
+          <option>Netflix</option>
+          <option>Prime Video</option>
+          <option>Disney+</option>
+          <option>HBO Max</option>
+          <option>Apple TV+</option>
+          <option>Hulu</option>
+          <option>YouTube</option>
+          <option>Cinema</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div class="fg fg-status">
+        <label>Status</label>
+        <select id="statusIn">
+          <option value="watching">▶ Watching</option>
+          <option value="wishlist">🔖 Want to Watch</option>
+          <option value="finished">✓ Finished</option>
+          <option value="dropped">✕ Dropped</option>
+        </select>
+      </div>
+      <button class="rent-btn" onclick="addEntry()">ADD TITLE →</button>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls-row">
+    <input type="text" class="search-box" id="searchIn" placeholder="Search your vault…" oninput="render()">
+    <div class="filter-tabs">
+      <button class="ftab active" data-f="all"      onclick="setFilter('all',this)">All</button>
+      <button class="ftab"        data-f="watching"  onclick="setFilter('watching',this)">▶ Watching</button>
+      <button class="ftab"        data-f="finished"  onclick="setFilter('finished',this)">✓ Finished</button>
+      <button class="ftab"        data-f="wishlist"  onclick="setFilter('wishlist',this)">🔖 Want</button>
+      <button class="ftab"        data-f="dropped"   onclick="setFilter('dropped',this)">✕ Dropped</button>
+    </div>
+  </div>
+
+  <div class="sort-bar">
+    <span>Sort by</span>
+    <select class="sort-sel" id="sortSel" onchange="render()">
+      <option value="newest">Newest First</option>
+      <option value="oldest">Oldest First</option>
+      <option value="alpha">A → Z</option>
+      <option value="rating">Top Rated</option>
+    </select>
+    <span class="result-count" id="resultCount"></span>
+  </div>
+
+  <!-- Grid -->
+  <div class="vhs-grid" id="vhsGrid"></div>
+
+</div>
+
+<script>
+  const PLATFORMS = {
+    'Netflix':'🔴','Prime Video':'📦','Disney+':'🏰','HBO Max':'👁️',
+    'Apple TV+':'🍎','Hulu':'💚','YouTube':'▶️','Cinema':'🎟️','Other':'📀'
+  };
+
+  const STATUS_LABELS = {
+    watching: '▶ WATCHING',
+    finished: '✓ FINISHED',
+    wishlist: '🔖 WANT',
+    dropped:  '✕ DROPPED'
+  };
+
+  let entries = JSON.parse(localStorage.getItem('sl-entries') || 'null');
+  let filter = 'all';
+
+  if (!entries) {
+    entries = [
+      { id:1,  title:'Lost',           type:'Series',      platform:'Apple TV+',  status:'watching', rating:5, notes:'S2 just dropped!', ep:'S2 E4', date:'2025-04-10' },
+      { id:2,  title:'Parasite',            type:'Movie',       platform:'Prime Video',status:'finished', rating:5, notes:'Masterpiece.',       ep:'',      date:'2025-01-22' },
+      { id:3,  title:'Inception',              type:'Movie',      platform:'Disney+',    status:'finished', rating:4, notes:'',                  ep:'',      date:'2025-02-14' },
+      { id:4,  title:'Frieren',             type:'Anime',       platform:'Other',      status:'watching', rating:5, notes:'Ep 28 paused',       ep:'Ep 28', date:'2025-03-01' },
+      { id:5,  title:'The Bear',            type:'Series',      platform:'Hulu',       status:'wishlist', rating:0, notes:'',                  ep:'',      date:'2025-03-15' },
+      { id:6,  title:'Interstellar',      type:'Movie',       platform:'Cinema',     status:'finished', rating:4, notes:'Stunning visuals',   ep:'',      date:'2025-01-05' },
+      { id:7,  title:'Bangalore Days',         type:'Movie', platform:'Netflix',    status:'dropped',  rating:2, notes:'',   ep:'Ep 3',  date:'2025-02-20' },
+      { id:8,  title:'Beckham',             type:'Documentary', platform:'Netflix',    status:'finished', rating:4, notes:'Surprisingly good', ep:'',      date:'2025-03-08' },
+    ];
+    save();
+  }
+
+  function save() { localStorage.setItem('sl-entries', JSON.stringify(entries)); }
+
+  function setFilter(f, btn) {
+    filter = f;
+    document.querySelectorAll('.ftab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    render();
+  }
+
+  function addEntry() {
+    const title = document.getElementById('titleIn').value.trim();
+    if (!title) { document.getElementById('titleIn').focus(); return; }
+    entries.unshift({
+      id: Date.now(),
+      title,
+      type:     document.getElementById('typeIn').value,
+      platform: document.getElementById('platIn').value,
+      status:   document.getElementById('statusIn').value,
+      rating: 0,
+      notes: '',
+      ep: '',
+      date: new Date().toISOString().split('T')[0]
+    });
+    document.getElementById('titleIn').value = '';
+    filter = 'all';
+    document.querySelectorAll('.ftab').forEach((b,i) => b.classList.toggle('active', i===0));
+    save();
+    render();
+  }
+
+  document.getElementById('titleIn').addEventListener('keydown', e => { if(e.key==='Enter') addEntry(); });
+
+  function del(id) { entries = entries.filter(e=>e.id!==id); save(); render(); }
+
+  function setRating(id, r) {
+    const e = entries.find(e=>e.id===id);
+    if(e){ e.rating=r; save(); render(); }
+  }
+
+  function setStatus(id, val) {
+    const e = entries.find(e=>e.id===id);
+    if(e){ e.status=val; save(); render(); }
+  }
+
+  function saveNote(id, val) {
+    const e = entries.find(e=>e.id===id);
+    if(e){ e.notes=val; save(); }
+  }
+
+  function saveEp(id, val) {
+    const e = entries.find(e=>e.id===id);
+    if(e){ e.ep=val; save(); }
+  }
+
+  function toggleNote(id) {
+    const ni = document.getElementById(`ni-${id}`);
+    const nd = document.getElementById(`nd-${id}`);
+    if (!ni) return;
+    const open = ni.classList.toggle('open');
+    if (nd) nd.style.display = open ? 'none' : '';
+    if (open) ni.focus();
+  }
+
+  function render() {
+    const q = document.getElementById('searchIn').value.toLowerCase();
+    const sort = document.getElementById('sortSel').value;
+
+    let list = entries.filter(e => {
+      const matchF = filter==='all' || e.status===filter;
+      const matchQ = e.title.toLowerCase().includes(q) || e.platform.toLowerCase().includes(q);
+      return matchF && matchQ;
+    });
+
+    if (sort==='oldest') list = [...list].reverse();
+    else if (sort==='alpha') list = [...list].sort((a,b) => a.title.localeCompare(b.title));
+    else if (sort==='rating') list = [...list].sort((a,b) => b.rating - a.rating);
+
+    // Counters
+    ['watching','finished','wishlist','dropped'].forEach(s => {
+      document.getElementById(`c-${s}`).textContent = entries.filter(e=>e.status===s).length;
+    });
+
+    document.getElementById('resultCount').textContent = `${list.length} title${list.length!==1?'s':''}`;
+
+    const grid = document.getElementById('vhsGrid');
+
+    if (list.length === 0) {
+      grid.innerHTML = `<div class="empty-state">
+        <div class="empty-icon">📼</div>
+        <div class="empty-title">Log's empty</div>
+        <div class="empty-sub">Add your first title to start streaming.</div>
+      </div>`;
+      return;
+    }
+
+    grid.innerHTML = list.map(e => {
+      const stars = [1,2,3,4,5].map(i =>
+        `<span class="star ${i<=e.rating?'lit':''}" onclick="setRating(${e.id},${i})">★</span>`
+      ).join('');
+
+      const platIcon = PLATFORMS[e.platform] || '📀';
+      const isShowType = ['Series','Anime','Mini-Series'].includes(e.type);
+
+      return `<div class="vhs-card" data-status="${e.status}">
+        <div class="vhs-spine">${STATUS_LABELS[e.status]}</div>
+        <div class="vhs-body">
+
+          <div class="tape-window">
+            <div class="tape-reel ${e.status==='watching'?'spinning':''}"></div>
+            <div class="tape-line"></div>
+            <div class="tape-reel ${e.status==='watching'?'spinning':''}"></div>
+          </div>
+
+          <div class="card-title">${e.title}</div>
+
+          <div class="card-meta">
+            <span class="meta-tag">${e.type}</span>
+            <span class="meta-tag platform">${platIcon} ${e.platform}</span>
+          </div>
+
+          ${isShowType ? `<div class="ep-tracker">
+            <span>EP:</span>
+            <input class="ep-input" id="ep-${e.id}" value="${e.ep||''}" placeholder="S1E1"
+              onblur="saveEp(${e.id},this.value)"
+              onkeydown="if(event.key==='Enter')this.blur()">
+          </div>` : ''}
+
+          <div class="stars">${stars}</div>
+
+          <div class="card-note" id="nd-${e.id}" onclick="toggleNote(${e.id})"
+            style="${e.notes?'':'opacity:0.4'}">${e.notes || 'add a note…'}</div>
+          <input type="text" class="note-input" id="ni-${e.id}" value="${e.notes||''}"
+            placeholder="e.g. watch with subtitles…"
+            onblur="saveNote(${e.id},this.value);toggleNote(${e.id})"
+            onkeydown="if(event.key==='Enter'){saveNote(${e.id},this.value);this.classList.remove('open');document.getElementById('nd-${e.id}').style.display=''}">
+
+          <select class="status-sel" onchange="setStatus(${e.id},this.value)">
+            <option value="watching"  ${e.status==='watching' ?'selected':''}>▶ WATCHING</option>
+            <option value="wishlist"  ${e.status==='wishlist' ?'selected':''}>🔖 WANT TO WATCH</option>
+            <option value="finished"  ${e.status==='finished' ?'selected':''}>✓ FINISHED</option>
+            <option value="dropped"   ${e.status==='dropped'  ?'selected':''}>✕ DROPPED</option>
+          </select>
+
+          <div class="card-footer">
+            <span class="card-date">${e.date}</span>
+            <div class="card-actions">
+              <button class="icon-btn del" onclick="del(${e.id})" title="Remove">×</button>
+            </div>
+          </div>
+
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  render();
+</script>
+</body>
+</html>
